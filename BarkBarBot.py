@@ -1,22 +1,24 @@
+import asyncio
+import aiohttp
+from BarkBarModels import *
+from dotenv import load_dotenv
 import os 
 import sqlite3
 import telebot
-
-from BarkBarModels import *
-from dotenv import load_dotenv
-from peewee import *
-from telebot.types import  InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.async_telebot import AsyncTeleBot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from telebot.util import quick_markup
+#from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, RegexHandler, ConversationHandler
 
 
 # Initialize bot
 load_dotenv(".env")
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = AsyncTeleBot(BOT_TOKEN)
 
 # Initialize db
 db = SqliteDatabase('BarkBar.db')
 db.connect()
-
 
 #### Utility functions ####
 def is_staff(username):
@@ -34,32 +36,69 @@ def is_admin(username):
         return staffer.active and staffer.is_admin
 
 
+#### Public Commands ####
 
-#### Bot Commands ####
+def main_menu_keyboard():
+    return quick_markup({
+        'See the menu' : {'callback_data' : 'cb_menu'},
+        'Order a drink' : {'callback_data' : 'cb_order'}
+    })
 
 # "Start" command is the first interaction you see with the bot
 @bot.message_handler(commands=['start'])
 def main_menu(message):
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 2
-    markup.add(InlineKeyboardButton("See the menu", callback_data="cb_menu"), InlineKeyboardButton("Order a Drink", callback_data="cb_order"))
-    bot.send_message(message.chat.id, "Choose an option:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Choose an option:", reply_markup=main_menu_keyboard())
+
+@bot.callback_query_handler(lambda query: query.data == "cb_menu")
+def show_menu(call):
+    bot.send_message(call.message.chat.id, "Here's the menu:\nVesper Martini - *Like sophisticated pine-sol*\nJungle Bird - *Served with $30 of fresh mint*\n\n**N/A**\nWater - *Crisp and refreshing*", parse_mode='Markdown')
+    
+@bot.callback_query_handler(lambda query: query.data == "cb_order")
+def place_order(call):
+    bot.send_message(call.message.chat.id, "This is where you'll put in an order!")
+            
+#### Staff Commands ####
+
+#### Admin Commands ####
+
+def admin_keyboard():
+    return quick_markup({
+        'Manage menus' : {'callback_data' : 'cb_admin_menu'},
+        'Manage staff' : {'callback_data' : 'cb_admin_staff'},
+        'See orders' : {'callback_data' : 'cb_admin_list_orders'}
+    })
+
+def admin_staff_keyboard():
+    return quick_markup({
+        'Add Staffer' : {'callback_data' : 'cb_admin_staff_add'},
+        'Remove Staffer' : {'callback_data' : 'cb_admin_staff_remove'},
+        'Enable/Disable Staffer' : {'callback_data' : 'cb_admin_staff_toggleactive'},
+        'Toggle Admin' : {'callback_data' : 'cb_admin_staff_toggleadmin'}
+    })
 
 @bot.message_handler(commands=['admin'])
 def admin_menu(message):
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 2
-    markup.add(InlineKeyboardButton("See the menu", callback_data="cb_menu"), InlineKeyboardButton("Order a Drink", callback_data="cb_order"))
-    bot.send_message(message.chat.id, "Choose an option:", reply_markup=markup)
+    if not is_admin(message.from_user.username):
+        bot.reply_to(message, f"You must be an admin to acces this menu.")
+        return
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    match call.data:
-        case "cb_menu":
-            bot.send_message(call.message.chat.id, "Here's the menu:\nItem stub\nItem stub, etc")
-        case "cb_order":
-            bot.send_message(call.message.chat.id, "Here's the menu:\nItem stub\nItem stub, etc")
+    bot.send_message(message.chat.id, "Choose an option:", reply_markup=admin_keyboard())
 
+@bot.callback_query_handler(lambda query: query.data == "cb_admin_staff")
+def admin_staff_menu(message):
+    if not is_admin(message.from_user.username):
+        bot.reply_to(message, f"You must be an admin to acces this menu.")
+        return
+
+    bot.send_message(message.chat.id, "Choose an option:", reply_markup=admin_staff_keyboard())
+           
+@bot.callback_query_handler(lambda query: query.data == "cb_admin_staff_add")
+def admin_staff_menu(message):
+    if not is_admin(message.from_user.username):
+        bot.reply_to(message, f"You must be an admin to acces this menu.")
+        return
+
+    bot.send_message(message.chat.id, "Choose an option:", reply_markup=admin_staff_keyboard())
 
 # Manage staff. Staff can use advanced commands, including adding other staff, adding and managing orders, etc
 @bot.message_handler(commands=['staff'])
@@ -117,4 +156,6 @@ def echo_all(message):
     bot.reply_to(message, message.text)
 
 ####### Run the bot!
-bot.infinity_polling()
+asyncio.run(bot.polling())
+
+
